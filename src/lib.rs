@@ -1,0 +1,91 @@
+extern crate byteorder;
+extern crate spidev;
+
+pub const REG_FIFO: u8 = 0x00;
+pub const REG_OPMODE: u8 = 0x01;
+pub const REG_DATAMODUL: u8 = 0x02;
+pub const REG_BITRATE_MSB: u8 = 0x03;
+pub const REG_BITRATE_LSB: u8 = 0x04;
+pub const REG_FDEV_MSB: u8 = 0x05;
+pub const REG_FDEV_LSB: u8 = 0x06;
+pub const REG_FRF_MSB: u8 = 0x07;
+pub const REG_FRF_MID: u8 = 0x08;
+pub const REG_FRF_LSB: u8 = 0x09;
+pub const REG_OSC1: u8 = 0x0A;
+pub const REG_AFCCTRL: u8 = 0x0B;
+pub const REG_LOWBAT: u8 = 0x0C;
+pub const REG_LISTEN1: u8 = 0x0D;
+pub const REG_LISTEN2: u8 = 0x0E;
+pub const REG_LISTEN3: u8 = 0x0F;
+pub const REG_VERSION: u8 = 0x10;
+pub const REG_PALEVEL: u8 = 0x11;
+pub const REG_PARAMP: u8 = 0x12;
+pub const REG_OCP: u8 = 0x13;
+pub const REG_LNA: u8 = 0x18;
+pub const REG_RXBW: u8 = 0x19;
+pub const REG_AFCBW: u8 = 0x1A;
+pub const REG_OOKPEAK: u8 = 0x1B;
+pub const REG_OOKAVG: u8 = 0x1C;
+pub const REG_OOKFIX: u8 = 0x1D;
+pub const REG_AFCFEI: u8 = 0x1E;
+pub const REG_AFC_MSB: u8 = 0x1F;
+pub const REG_AFC_LSB: u8 = 0x20;
+pub const REG_FEI_MSB: u8 = 0x21;
+pub const REG_FEI_LSB: u8 = 0x22;
+pub const REG_RSSICONFIG: u8 = 0x23;
+pub const REG_RSSIVALUE: u8 = 0x24;
+pub const REG_DIOMAPPING1: u8 = 0x25;
+pub const REG_DIOMAPPING2: u8 = 0x26;
+pub const REG_IRQFLAGS1: u8 = 0x27;
+pub const REG_IRQFLAGS2: u8 = 0x28;
+pub const REG_RSSITHRESH: u8 = 0x29;
+pub const REG_RXTIMEOUT1: u8 = 0x2A;
+pub const REG_RXTIMEOUT2: u8 = 0x2B;
+pub const REG_PREAMBLE_MSB: u8 = 0x2C;
+pub const REG_PREAMBLE_LSB: u8 = 0x2D;
+pub const REG_SYNCCONFIG: u8 = 0x2E;
+pub const REG_SYNCVALUE1: u8 = 0x2F;
+pub const REG_SYNCVALUE2: u8 = 0x30;
+pub const REG_SYNCVALUE3: u8 = 0x31;
+pub const REG_SYNCVALUE4: u8 = 0x32;
+pub const REG_SYNCVALUE5: u8 = 0x33;
+pub const REG_SYNCVALUE6: u8 = 0x34;
+pub const REG_SYNCVALUE7: u8 = 0x35;
+pub const REG_SYNCVALUE8: u8 = 0x36;
+pub const REG_PACKETCONFIG1: u8 = 0x37;
+pub const REG_PAYLOADLENGTH: u8 = 0x38;
+pub const REG_NODEADRS: u8 = 0x39;
+pub const REG_BROADCASTADRS: u8 = 0x3A;
+pub const REG_AUTOMODES: u8 = 0x3B;
+pub const REG_FIFOTHRESH: u8 = 0x3C;
+pub const REG_PACKETCONFIG2: u8 = 0x3D;
+pub const REG_AESKEY1: u8 = 0x3E;
+pub const REG_AESKEY2: u8 = 0x3F;
+pub const REG_AESKEY3: u8 = 0x40;
+pub const REG_AESKEY4: u8 = 0x41;
+pub const REG_AESKEY5: u8 = 0x42;
+pub const REG_AESKEY6: u8 = 0x43;
+pub const REG_AESKEY7: u8 = 0x44;
+pub const REG_AESKEY8: u8 = 0x45;
+pub const REG_AESKEY9: u8 = 0x46;
+pub const REG_AESKEY10: u8 = 0x47;
+pub const REG_AESKEY11: u8 = 0x48;
+pub const REG_AESKEY12: u8 = 0x49;
+pub const REG_AESKEY13: u8 = 0x4A;
+pub const REG_AESKEY14: u8 = 0x4B;
+pub const REG_AESKEY15: u8 = 0x4C;
+pub const REG_AESKEY16: u8 = 0x4D;
+pub const REG_TEMP1: u8 = 0x4E;
+pub const REG_TEMP2: u8 = 0x4F;
+pub const REG_TESTLNA: u8 = 0x58;
+pub const REG_TESTTCXO: u8 = 0x59;
+pub const REG_TESTLLBW: u8 = 0x5F;
+pub const REG_TESTDAGC: u8 = 0x6F;
+pub const REG_TESTAFC: u8 = 0x71;
+
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_works() {}
+}

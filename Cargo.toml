@@ -1,0 +1,8 @@
+[package]
+name = "spi_rfm69"
+version = "0.1.0"
+authors = ["Benjamin Cheng <ben@bcheng.cf>"]
+
+[dependencies]
+byteorder = "1"
+spidev = "0.3"
