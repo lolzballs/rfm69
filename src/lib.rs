@@ -378,6 +378,115 @@ impl Default for Listen1Config {
     }
 }
 
+pub struct PowerAmplifierLevel {
+    pub pa0: bool,
+    pub pa1: bool,
+    pub pa2: bool,
+    /// Output power settings, with 1 dB steps. 5-bit value.
+    /// P_out = -18 + *OutputPower* [dBm], with PA0 or PA1.
+    /// P_out = -14 + *OutputPower* [dBm], with PA1 or PA2.
+    /// (limited to the 16 upper values of *OutputPower*)
+    pub output_power: u8,
+}
+
+impl From<u8> for PowerAmplifierLevel {
+    fn from(raw: u8) -> Self {
+        PowerAmplifierLevel {
+            pa0: (raw >> 7) & 0b1 == 1,
+            pa1: (raw >> 6) & 0b1 == 1,
+            pa2: (raw >> 5) & 0b1 == 1,
+            output_power: raw & 0b11111,
+        }
+    }
+}
+
+impl Into<u8> for PowerAmplifierLevel {
+    fn into(self) -> u8 {
+        ((self.pa0 as u8) << 7) | ((self.pa1 as u8) << 6) | ((self.pa2 as u8) << 5) |
+            (self.output_power & 0b11111)
+    }
+}
+
+impl Default for PowerAmplifierLevel {
+    fn default() -> Self {
+        PowerAmplifierLevel {
+            pa0: true,
+            pa1: false,
+            pa2: false,
+            output_power: 0b11111,
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum PowerAmplifierRamp {
+    US3400 = 0b0000,
+    US2000 = 0b0001,
+    US1000 = 0b0010,
+    US500 = 0b0011,
+    US250 = 0b0100,
+    US125 = 0b0101,
+    US100 = 0b0110,
+    US62 = 0b0111,
+    US50 = 0b1000,
+    US40 = 0b1001,
+    US31 = 0b1010,
+    US25 = 0b1011,
+    US20 = 0b1100,
+    US15 = 0b1101,
+    US12 = 0b1110,
+    US10 = 0b1111,
+}
+
+impl From<u8> for PowerAmplifierRamp {
+    fn from(raw: u8) -> Self {
+        unsafe { mem::transmute(raw) }
+    }
+}
+
+impl Into<u8> for PowerAmplifierRamp {
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
+
+impl Default for PowerAmplifierRamp {
+    fn default() -> Self {
+        PowerAmplifierRamp::US125
+    }
+}
+
+pub struct OverloadCurrentProtection {
+    pub on: bool,
+    /// Trimming of OCP current:
+    /// I_max = 45 + 5 * OcpTrim(mA)
+    pub trim: u8,
+}
+
+impl From<u8> for OverloadCurrentProtection {
+    fn from(raw: u8) -> Self {
+        OverloadCurrentProtection {
+            on: (raw >> 4) & 0b1 == 1,
+            trim: raw & 0b1111,
+        }
+    }
+}
+
+impl Into<u8> for OverloadCurrentProtection {
+    fn into(self) -> u8 {
+        ((self.on as u8) << 4) | (self.trim & 0b1111)
+    }
+}
+
+impl Default for OverloadCurrentProtection {
+    fn default() -> Self {
+        OverloadCurrentProtection {
+            on: true,
+            trim: 0b1010,
+        }
+    }
+}
+
 // SPI Register access: Pg 31
 
 pub struct RFM69 {
