@@ -91,29 +91,52 @@ pub const REG_TESTLLBW: u8 = 0x5F;
 pub const REG_TESTDAGC: u8 = 0x6F;
 pub const REG_TESTAFC: u8 = 0x71;
 
-// RegOpMode
-pub const RF_OPMODE_SEQUENCER_OFF: u8 = 0x80;
-pub const RF_OPMODE_SEQUENCER_ON: u8 = 0x00;
-pub const RF_OPMODE_LISTEN_ON: u8 = 0x40;
-pub const RF_OPMODE_LISTEN_OFF: u8 = 0x00;
-pub const RF_OPMODE_LISTENABORT: u8 = 0x20;
-pub const RF_OPMODE_SLEEP: u8 = 0x00;
-pub const RF_OPMODE_STANDBY: u8 = 0x04;
-pub const RF_OPMODE_SYNTHESIZER: u8 = 0x08;
-pub const RF_OPMODE_TRANSMITTER: u8 = 0x0C;
-pub const RF_OPMODE_RECEIVER: u8 = 0x10;
+#[repr(u8)]
+pub enum OperatingMode {
+    Sleep = 0,
+    Standby = 1,
+    FrequencySynthesizer = 2,
+    Transmitter = 3,
+    Receiver = 4,
+}
 
-// RegDataModul
-pub const RF_DATAMODUL_DATAMODE_PACKET: u8 = 0x00;
-pub const RF_DATAMODUL_DATAMODE_CONTINUOUS: u8 = 0x40;
-pub const RF_DATAMODUL_DATAMODE_CONTINUOUSNOBSYNC: u8 = 0x60;
-pub const RF_DATAMODUL_MODULATIONTYPE_FSK: u8 = 0x00;
-pub const RF_DATAMODUL_MODULATIONTYPE_OOK: u8 = 0x08;
-pub const RF_DATAMODUL_MODULATIONSHAPING_00: u8 = 0x00;
-pub const RF_DATAMODUL_MODULATIONSHAPING_01: u8 = 0x01;
-pub const RF_DATAMODUL_MODULATIONSHAPING_10: u8 = 0x02;
-pub const RF_DATAMODUL_MODULATIONSHAPING_11: u8 = 0x03;
+pub struct OpModeConfig {
+    pub sequencer: bool,
+    pub listen: bool,
+    pub listen_abort: bool,
+    pub mode: OperatingMode,
+}
 
+impl Into<u8> for OpModeConfig {
+    fn into(self) -> u8 {
+        ((self.sequencer as u8) << 7) | ((self.listen as u8) << 6) |
+            ((self.listen_abort as u8) << 5) | ((self.mode as u8 & 0b111) << 2)
+    }
+}
+
+impl From<u8> for OpModeConfig {
+    fn from(raw: u8) -> Self {
+        OpModeConfig {
+            sequencer: (raw >> 7) & 0b1 == 1,
+            listen: (raw >> 6) & 0b1 == 1,
+            listen_abort: (raw >> 5) & 0b1 == 1,
+            mode: unsafe { mem::transmute((raw >> 2) & 0b111) },
+        }
+    }
+}
+
+impl Default for OpModeConfig {
+    fn default() -> Self {
+        OpModeConfig {
+            sequencer: false,
+            listen: false,
+            listen_abort: false,
+            mode: OperatingMode::Sleep,
+        }
+    }
+}
+
+#[repr(u8)]
 pub enum DataModulationMode {
     Packet = 0,
     ContinuousWithSync = 2,
@@ -125,6 +148,7 @@ pub enum DataModulation {
     OOK(OOKShaping),
 }
 
+#[repr(u8)]
 pub enum FSKShaping {
     None = 0,
     // BT = 1.0
@@ -135,6 +159,7 @@ pub enum FSKShaping {
     GaussianFilter03 = 3,
 }
 
+#[repr(u8)]
 pub enum OOKShaping {
     None = 0,
     // f_cutoff = BR
@@ -190,10 +215,6 @@ impl Default for DataModulationConfig {
     }
 }
 
-// RegOsc1
-pub const RF_OSC1_RCCAL_START: u8 = 0x80;
-pub const RF_OSC1_RCCAL_DONE: u8 = 0x40;
-
 pub struct Osc1Config {
     pub cal_start: bool,
     pub cal_done: bool,
@@ -201,7 +222,7 @@ pub struct Osc1Config {
 
 impl Into<u8> for Osc1Config {
     fn into(self) -> u8 {
-        ((if self.cal_start { 1 } else { 0 }) << 7) | ((if self.cal_done { 1 } else { 0 }) << 6)
+        ((self.cal_start as u8) << 7) | ((self.cal_done as u8) << 6)
     }
 }
 
@@ -223,10 +244,6 @@ impl Default for Osc1Config {
     }
 }
 
-// RegAfcCtrl
-pub const RF_AFCCTRL_LOWBETA_OFF: u8 = 0x00;
-pub const RF_AFCCTRL_LOWBETA_ON: u8 = 0x20;
-
 pub struct AfcCtrlConfig {
     /// Improved AFC routine for signals with modulation index
     /// lower than 2. Refer to section 3.5.16 for details.
@@ -235,7 +252,7 @@ pub struct AfcCtrlConfig {
 
 impl Into<u8> for AfcCtrlConfig {
     fn into(self) -> u8 {
-        (if self.low_beta { 1 } else { 0 }) << 5
+        (self.low_beta as u8) << 5
     }
 }
 
@@ -251,6 +268,7 @@ impl Default for AfcCtrlConfig {
     }
 }
 
+#[repr(u8)]
 pub enum LowBatThreshold {
     V1695 = 0,
     V1764 = 1,
@@ -271,7 +289,7 @@ pub struct LowBatConfig {
 
 impl Into<u8> for LowBatConfig {
     fn into(self) -> u8 {
-        ((if self.on { 0 } else { 1 }) << 3) | ((self.trim as u8) & 0b111)
+        ((self.on as u8) << 3) | ((self.trim as u8) & 0b111)
     }
 }
 
@@ -345,7 +363,7 @@ impl From<u8> for Listen1Config {
 impl Into<u8> for Listen1Config {
     fn into(self) -> u8 {
         ((self.idle_time as u8) << 6) | ((self.rx_time as u8) << 4) |
-            ((if self.criteria { 1 } else { 0 }) << 3) | ((self.end_action as u8) << 1)
+            ((self.criteria as u8) << 3) | ((self.end_action as u8) << 1)
     }
 }
 
@@ -359,20 +377,6 @@ impl Default for Listen1Config {
         }
     }
 }
-
-// RegListen1
-pub const RF_LISTEN1_RESOL_IDLE_64: u8 = 0x40;
-pub const RF_LISTEN1_RESOL_IDLE_4100: u8 = 0xB0;
-pub const RF_LISTEN1_RESOL_IDLE_262000: u8 = 0xC0;
-pub const RF_LISTEN1_RESOL_RX_64: u8 = 0x10;
-pub const RF_LISTEN1_RESOL_RX_4100: u8 = 0x20;
-pub const RF_LISTEN1_RESOL_RX_262000: u8 = 0x30;
-pub const RX_LISTEN1_CRITERIA_RSSI: u8 = 0x00;
-pub const RX_LISTEN1_CRITERIA_RSSIANDSYNC: u8 = 0x08;
-pub const RX_LISTEN1_END_00: u8 = 0x00;
-pub const RX_LISTEN1_END_01: u8 = 0x02;
-pub const RX_LISTEN1_END_10: u8 = 0x04;
-
 
 // SPI Register access: Pg 31
 
