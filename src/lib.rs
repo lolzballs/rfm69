@@ -1221,7 +1221,7 @@ impl Default for Temp1 {
     }
 }
 
-// SPI Register access: Pg 31
+// SPI Register access: Pg 46
 
 pub struct RFM69 {
     dev: Spidev,
@@ -1230,6 +1230,41 @@ pub struct RFM69 {
 impl RFM69 {
     pub fn new(dev: Spidev) -> Result<Self> {
         Ok(RFM69 { dev })
+    }
+
+    fn read_reg(&mut self, reg: u8) -> Result<u8> {
+        let mut buf = [0u8; 1];
+        self.dev.transfer_multiple(
+            &mut [
+                SpidevTransfer::write(&[reg & SPI_READ]),
+                SpidevTransfer::read(&mut buf),
+            ],
+        )?;
+        Ok(buf[0])
+    }
+
+    fn write_reg(&mut self, reg: u8, v: u8) -> Result<()> {
+        self.dev.transfer(
+            &mut SpidevTransfer::write(&[reg | SPI_WRITE, v]),
+        )
+    }
+
+    fn read_reg_multiple(&mut self, reg: u8, read: &mut [u8]) -> Result<()> {
+        self.dev.transfer_multiple(
+            &mut [
+                SpidevTransfer::write(&[reg & SPI_READ]),
+                SpidevTransfer::read(read),
+            ],
+        )
+    }
+
+    fn write_reg_multiple(&mut self, reg: u8, write: &[u8]) -> Result<()> {
+        self.dev.transfer_multiple(
+            &mut [
+                SpidevTransfer::write(&[reg & SPI_READ]),
+                SpidevTransfer::write(write),
+            ],
+        )
     }
 }
 
