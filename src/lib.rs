@@ -1192,6 +1192,35 @@ impl Default for PacketConfig2 {
     }
 }
 
+pub struct Temp1 {
+    pub measurement_start: bool,
+    pub measurement_running: bool,
+}
+
+impl From<u8> for Temp1 {
+    fn from(raw: u8) -> Self {
+        Temp1 {
+            measurement_start: (raw >> 3) & 0b1 == 1,
+            measurement_running: (raw >> 2) & 0b1 == 1,
+        }
+    }
+}
+
+impl Into<u8> for Temp1 {
+    fn into(self) -> u8 {
+        ((self.measurement_start as u8) << 3) | ((self.measurement_running as u8) << 2)
+    }
+}
+
+impl Default for Temp1 {
+    fn default() -> Self {
+        Temp1 {
+            measurement_start: false,
+            measurement_running: false,
+        }
+    }
+}
+
 // SPI Register access: Pg 31
 
 pub struct RFM69 {
