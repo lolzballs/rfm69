@@ -487,6 +487,303 @@ impl Default for OverloadCurrentProtection {
     }
 }
 
+#[repr(u8)]
+pub enum LNAImpedance {
+    Ohms50 = 0,
+    Ohms200 = 1,
+}
+
+#[repr(u8)]
+pub enum LNAGainSelect {
+    AGC = 0b000,
+    G1 = 0b001,
+    G2 = 0b010,
+    G3 = 0b011,
+    G4 = 0b100,
+    G5 = 0b101,
+    G6 = 0b110,
+}
+
+pub struct LowNoiseAmplifier {
+    input_impedance: LNAImpedance,
+    /// Current LNA gain, set either manually, or by the AGC
+    current_gain: u8,
+    /// LNA gain setting
+    gain_select: LNAGainSelect,
+}
+
+impl From<u8> for LowNoiseAmplifier {
+    fn from(raw: u8) -> Self {
+        LowNoiseAmplifier {
+            input_impedance: unsafe { mem::transmute(raw >> 7) },
+            current_gain: (raw >> 3) & 0b111,
+            gain_select: unsafe { mem::transmute(raw & 0b111) },
+        }
+    }
+}
+
+impl Into<u8> for LowNoiseAmplifier {
+    fn into(self) -> u8 {
+        ((self.input_impedance as u8) >> 7) | (self.current_gain >> 3) | (self.gain_select as u8)
+    }
+}
+
+impl Default for LowNoiseAmplifier {
+    fn default() -> Self {
+        LowNoiseAmplifier {
+            input_impedance: LNAImpedance::Ohms200,
+            current_gain: 0b001,
+            gain_select: LNAGainSelect::AGC,
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum ReceiveBandwidthMantissa {
+    Mantissa16 = 0b00,
+    Mantissa20 = 0b01,
+    Mantissa24 = 0b10,
+}
+
+pub struct ReceiveBandwidth {
+    /// Cut-off frequency of the DC offset canceller (DCC):
+    /// f_c = \frac{4 \cross RxBw}{2\pi \cross 2^{DccFreq + 2}}
+    pub dcc_freq: u8,
+    pub bw_mant: ReceiveBandwidthMantissa,
+    /// FSK: RxBw = \frac{FXOSC}{bw_mant \cross 2^{bw_exp + 2}}
+    /// OOK: RxBw = \frac{FXOSC}{bw_mant \cross 2^{bw_exp + 3}}
+    pub bw_exp: u8,
+}
+
+impl From<u8> for ReceiveBandwidth {
+    fn from(raw: u8) -> Self {
+        ReceiveBandwidth {
+            dcc_freq: (raw >> 5) & 0b111,
+            bw_mant: unsafe { mem::transmute((raw >> 3) & 0b11) },
+            bw_exp: raw & 0b111,
+        }
+    }
+}
+
+impl Into<u8> for ReceiveBandwidth {
+    fn into(self) -> u8 {
+        ((self.dcc_freq & 0b111) << 5) | ((self.bw_mant as u8) >> 3) | (self.bw_exp & 0b111)
+    }
+}
+
+impl Default for ReceiveBandwidth {
+    fn default() -> Self {
+        ReceiveBandwidth {
+            dcc_freq: 0b010,
+            bw_mant: ReceiveBandwidthMantissa::Mantissa24,
+            bw_exp: 0b101,
+        }
+    }
+}
+
+pub struct AFCBandwidth {
+    pub dcc_freq: u8,
+    pub rx_bw_mant: u8,
+    pub rx_bw_exp: u8,
+}
+
+impl From<u8> for AFCBandwidth {
+    fn from(raw: u8) -> Self {
+        AFCBandwidth {
+            dcc_freq: (raw >> 5) & 0b111,
+            rx_bw_mant: (raw >> 3) & 0b11,
+            rx_bw_exp: raw & 0b111,
+        }
+    }
+}
+
+impl Into<u8> for AFCBandwidth {
+    fn into(self) -> u8 {
+        ((self.dcc_freq & 0b111) << 5) | ((self.rx_bw_mant & 0b11) << 3) | (self.rx_bw_exp & 0b111)
+    }
+}
+
+impl Default for AFCBandwidth {
+    fn default() -> Self {
+        AFCBandwidth {
+            dcc_freq: 0b100,
+            rx_bw_mant: 0b01,
+            rx_bw_exp: 0b011,
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum OOKThreshType {
+    Fixed = 0b00,
+    Peak = 0b01,
+    Average = 0b10,
+}
+
+#[repr(u8)]
+/// Size of each decrement of the RSSI threshold in the OOK demodulator
+pub enum OOKPeakThreshStep {
+    DB05 = 0b000,
+    DB10 = 0b001,
+    DB15 = 0b010,
+    DB20 = 0b011,
+    DB30 = 0b100,
+    DB40 = 0b101,
+    DB50 = 0b110,
+    DB60 = 0b111,
+}
+
+#[repr(u8)]
+/// Period of decrement of the RSSI threshold in the OOK demodulator
+pub enum OOKPeakThreshDec {
+    Once = 0b000,
+    OnceEvery2 = 0b001,
+    OnceEvery4 = 0b010,
+    OnceEvery8 = 0b011,
+    Twice = 0b100,
+    FourTimes = 0b101,
+    EightTimes = 0b110,
+    SixteenTimes = 0b111,
+}
+
+pub struct OOKPeak {
+    pub thresh_type: OOKThreshType,
+    pub peak_thresh_step: OOKPeakThreshStep,
+    pub peak_thresh_dec: OOKPeakThreshDec,
+}
+
+impl From<u8> for OOKPeak {
+    fn from(raw: u8) -> Self {
+        unsafe {
+            OOKPeak {
+                thresh_type: mem::transmute((raw >> 6) & 0b11),
+                peak_thresh_step: mem::transmute((raw >> 3) & 0b111),
+                peak_thresh_dec: mem::transmute(raw & 0b111),
+            }
+        }
+    }
+}
+
+impl Into<u8> for OOKPeak {
+    fn into(self) -> u8 {
+        ((self.thresh_type as u8) << 6) | ((self.peak_thresh_step as u8) << 3) |
+            ((self.peak_thresh_dec as u8))
+    }
+}
+
+impl Default for OOKPeak {
+    fn default() -> Self {
+        OOKPeak {
+            thresh_type: OOKThreshType::Peak,
+            peak_thresh_step: OOKPeakThreshStep::DB05,
+            peak_thresh_dec: OOKPeakThreshDec::Once,
+        }
+    }
+}
+
+#[repr(u8)]
+/// Filter coefficients in average mode of the OOK demodulator.
+pub enum OOKAverage {
+    Pi32th = 0b00000000,
+    Pi8th = 0b01000000,
+    Pi4th = 0b10000000,
+    Pi2th = 0b11000000,
+}
+
+impl From<u8> for OOKAverage {
+    fn from(raw: u8) -> Self {
+        unsafe { mem::transmute(raw) }
+    }
+}
+
+impl Into<u8> for OOKAverage {
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
+
+impl Default for OOKAverage {
+    fn default() -> Self {
+        OOKAverage::Pi4th
+    }
+}
+
+pub struct AFCFrequencyErrorIndicator {
+    pub fei_done: bool,
+    pub fei_start: bool,
+    pub afc_done: bool,
+    pub afc_auto_clear: bool,
+    pub afc_auto_on: bool,
+    pub afc_clear: bool,
+    pub afc_start: bool,
+}
+
+impl From<u8> for AFCFrequencyErrorIndicator {
+    fn from(raw: u8) -> Self {
+        AFCFrequencyErrorIndicator {
+            fei_done: (raw >> 6) & 0b1 == 1,
+            fei_start: (raw >> 5) & 0b1 == 1,
+            afc_done: (raw >> 4) & 0b1 == 1,
+            afc_auto_clear: (raw >> 3) & 0b1 == 1,
+            afc_auto_on: (raw >> 2) & 0b1 == 1,
+            afc_clear: (raw >> 1) & 0b1 == 1,
+            afc_start: raw & 0b1 == 1,
+        }
+    }
+}
+
+impl Into<u8> for AFCFrequencyErrorIndicator {
+    fn into(self) -> u8 {
+        ((self.fei_done as u8) << 6) | ((self.fei_start as u8) << 5) |
+            ((self.afc_done as u8) << 4) | ((self.afc_auto_clear as u8) << 3) |
+            ((self.afc_auto_on as u8) << 2) | ((self.afc_clear as u8) << 1) |
+            (self.afc_start as u8)
+    }
+}
+
+impl Default for AFCFrequencyErrorIndicator {
+    fn default() -> Self {
+        AFCFrequencyErrorIndicator {
+            fei_done: false,
+            fei_start: false,
+            afc_done: true,
+            afc_auto_clear: false,
+            afc_auto_on: false,
+            afc_clear: false,
+            afc_start: false,
+        }
+    }
+}
+
+pub struct RSSIConfig {
+    pub done: bool,
+    pub start: bool,
+}
+
+impl From<u8> for RSSIConfig {
+    fn from(raw: u8) -> Self {
+        RSSIConfig {
+            done: (raw >> 1) & 0b1 == 1,
+            start: raw & 0b1 == 1,
+        }
+    }
+}
+
+impl Into<u8> for RSSIConfig {
+    fn into(self) -> u8 {
+        ((self.done as u8) << 1) | (self.start as u8)
+    }
+}
+
+impl Default for RSSIConfig {
+    fn default() -> Self {
+        RSSIConfig {
+            done: true,
+            start: false,
+        }
+    }
+}
+
 // SPI Register access: Pg 31
 
 pub struct RFM69 {
