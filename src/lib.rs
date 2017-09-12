@@ -964,6 +964,234 @@ impl Default for IRQFlags2 {
     }
 }
 
+#[repr(u8)]
+pub enum FIFOFillCondition {
+    /// If SyncAddress interrupt occurs
+    Interrupt = 0,
+    Always = 1,
+}
+
+pub struct SyncConfig {
+    on: bool,
+    fifo_fill_condition: FIFOFillCondition,
+    size: u8,
+    tolerance: u8,
+}
+
+impl From<u8> for SyncConfig {
+    fn from(raw: u8) -> Self {
+        SyncConfig {
+            on: (raw >> 7) & 0b1 == 1,
+            fifo_fill_condition: unsafe { mem::transmute((raw >> 6) & 0b1) },
+            size: (raw >> 3) & 0b111,
+            tolerance: raw & 0b111,
+        }
+    }
+}
+
+impl Into<u8> for SyncConfig {
+    fn into(self) -> u8 {
+        ((self.on as u8) << 7) | ((self.fifo_fill_condition as u8) << 6) |
+            ((self.size & 0b111) << 3) | (self.tolerance & 0b111)
+    }
+}
+
+impl Default for SyncConfig {
+    fn default() -> Self {
+        SyncConfig {
+            on: true,
+            fifo_fill_condition: FIFOFillCondition::Interrupt,
+            size: 0b011,
+            tolerance: 0,
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum PacketEncoding {
+    None = 0b00,
+    Manchester = 0b01,
+    Whitening = 0b10,
+}
+
+#[repr(u8)]
+pub enum PacketFiltering {
+    None = 0b00,
+    MatchNode = 0b01,
+    MatchNodeAndBroadcast = 0b10,
+}
+
+pub struct PacketConfig1 {
+    packet_length_variable: bool,
+    dc_free: PacketEncoding,
+    crc: bool,
+    crc_auto_clear_off: bool,
+    address_filtering: PacketFiltering,
+}
+
+impl From<u8> for PacketConfig1 {
+    fn from(raw: u8) -> Self {
+        PacketConfig1 {
+            packet_length_variable: (raw >> 7) & 0b1 == 1,
+            dc_free: unsafe { mem::transmute((raw >> 5) & 0b11) },
+            crc: (raw >> 4) & 0b1 == 1,
+            crc_auto_clear_off: (raw >> 3) & 0b1 == 1,
+            address_filtering: unsafe { mem::transmute(raw & 0b11) },
+        }
+    }
+}
+
+impl Into<u8> for PacketConfig1 {
+    fn into(self) -> u8 {
+        ((self.packet_length_variable as u8) >> 7) | ((self.dc_free as u8) >> 5) |
+            ((self.crc as u8) >> 4) | ((self.crc_auto_clear_off as u8) >> 3) |
+            ((self.address_filtering as u8) >> 1)
+    }
+}
+
+impl Default for PacketConfig1 {
+    fn default() -> Self {
+        PacketConfig1 {
+            packet_length_variable: false,
+            dc_free: PacketEncoding::None,
+            crc: true,
+            crc_auto_clear_off: false,
+            address_filtering: PacketFiltering::None,
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum AutoModeEnterCondition {
+    None = 0b000,
+    FifoNotEmpty = 0b001,
+    FifoLevel = 0b010,
+    CrcOk = 0b011,
+    PayloadReady = 0b100,
+    SyncAddress = 0b101,
+    PacketSent = 0b110,
+    FifoNotEmptyFalling = 0b111,
+}
+
+#[repr(u8)]
+pub enum AutoModeExitCondition {
+    None = 0b000,
+    FifoNotEmpty = 0b001,
+    FifoLevel = 0b010,
+    CrcOk = 0b011,
+    PayloadReady = 0b100,
+    SyncAddress = 0b101,
+    PacketSent = 0b110,
+    Timeout = 0b111,
+}
+
+#[repr(u8)]
+pub enum IntermediateMode {
+    Sleep = 0b00,
+    Standby = 0b01,
+    Receiver = 0b10,
+    Transmitter = 0b11,
+}
+
+pub struct AutoModes {
+    pub enter: AutoModeEnterCondition,
+    pub exit: AutoModeExitCondition,
+    pub intermediate: IntermediateMode,
+}
+
+impl From<u8> for AutoModes {
+    fn from(raw: u8) -> Self {
+        unsafe {
+            AutoModes {
+                enter: mem::transmute((raw >> 5) & 0b111),
+                exit: mem::transmute((raw >> 2) & 0b111),
+                intermediate: mem::transmute(raw & 0b111),
+            }
+        }
+    }
+}
+
+impl Into<u8> for AutoModes {
+    fn into(self) -> u8 {
+        ((self.enter as u8) << 5) | ((self.exit as u8) << 2) | (self.intermediate as u8)
+    }
+}
+
+impl Default for AutoModes {
+    fn default() -> Self {
+        AutoModes {
+            enter: AutoModeEnterCondition::None,
+            exit: AutoModeExitCondition::None,
+            intermediate: IntermediateMode::Sleep,
+        }
+    }
+}
+
+pub struct FifoThreshold {
+    pub when_not_empty: bool,
+    pub threshold: u8,
+}
+
+impl From<u8> for FifoThreshold {
+    fn from(raw: u8) -> Self {
+        FifoThreshold {
+            when_not_empty: (raw >> 7) & 0b1 == 1,
+            threshold: raw & 0b1111111,
+        }
+    }
+}
+
+impl Into<u8> for FifoThreshold {
+    fn into(self) -> u8 {
+        ((self.when_not_empty as u8) << 7) | (self.threshold & 0b1111111)
+    }
+}
+
+impl Default for FifoThreshold {
+    fn default() -> Self {
+        FifoThreshold {
+            when_not_empty: true,
+            threshold: 0b0001111,
+        }
+    }
+}
+
+pub struct PacketConfig2 {
+    pub inter_packet_rx_delay: u8,
+    pub restart_rx: bool,
+    pub auto_rx_restart: bool,
+    pub aes: bool,
+}
+
+impl From<u8> for PacketConfig2 {
+    fn from(raw: u8) -> Self {
+        PacketConfig2 {
+            inter_packet_rx_delay: (raw >> 4) & 0b1111,
+            restart_rx: (raw >> 2) & 0b1 == 1,
+            auto_rx_restart: (raw >> 1) & 0b1 == 1,
+            aes: raw & 0b1 == 1,
+        }
+    }
+}
+
+impl Into<u8> for PacketConfig2 {
+    fn into(self) -> u8 {
+        ((self.inter_packet_rx_delay & 0b1111) << 4) | ((self.restart_rx as u8) << 2) |
+            ((self.auto_rx_restart as u8) << 1) | (self.aes as u8)
+    }
+}
+
+impl Default for PacketConfig2 {
+    fn default() -> Self {
+        PacketConfig2 {
+            inter_packet_rx_delay: 0b0000,
+            restart_rx: false,
+            auto_rx_restart: true,
+            aes: false,
+        }
+    }
+}
+
 // SPI Register access: Pg 31
 
 pub struct RFM69 {
