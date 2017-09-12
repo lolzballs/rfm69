@@ -784,6 +784,78 @@ impl Default for RSSIConfig {
     }
 }
 
+pub struct DIOMapping1 {
+    dio0: u8,
+    dio1: u8,
+    dio2: u8,
+    dio3: u8,
+}
+
+impl From<u8> for DIOMapping1 {
+    fn from(raw: u8) -> Self {
+        DIOMapping1 {
+            dio0: (raw >> 6) & 0b11,
+            dio1: (raw >> 4) & 0b11,
+            dio2: (raw >> 2) & 0b11,
+            dio3: raw & 0b11,
+        }
+    }
+}
+
+impl Into<u8> for DIOMapping1 {
+    fn into(self) -> u8 {
+        ((self.dio0 & 0b11) << 6) | ((self.dio1 & 0b11) << 4) | ((self.dio2 & 0b11) << 2) |
+            (self.dio3 & 0b11)
+    }
+}
+
+impl Default for DIOMapping1 {
+    fn default() -> Self {
+        DIOMapping1 {
+            dio0: 0,
+            dio1: 0,
+            dio2: 0,
+            dio3: 0,
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum ClockoutFrequency {
+    XOSC = 0b000,
+    XOSC2 = 0b001,
+    XOSC4 = 0b010,
+    XOSC8 = 0b011,
+    XOSC16 = 0b100,
+    XOSC32 = 0b101,
+    RC = 0b110,
+    OFF = 0b111,
+}
+
+pub struct DIOMapping2 {
+    dio4: u8,
+    dio5: u8,
+    clkout: ClockoutFrequency,
+}
+
+impl From<u8> for DIOMapping2 {
+    fn from(raw: u8) -> Self {
+        DIOMapping2 {
+            dio4: (raw >> 6) & 0b11,
+            dio5: (raw >> 4) & 0b11,
+            clkout: unsafe { mem::transmute(raw & 0b111) },
+        }
+    }
+}
+
+impl Into<u8> for DIOMapping2 {
+    fn into(self) -> u8 {
+        ((self.dio4 & 0b11) << 6) | ((self.dio5 & 0b11) << 4) | (self.clkout as u8)
+    }
+}
+
+
+
 // SPI Register access: Pg 31
 
 pub struct RFM69 {
