@@ -785,10 +785,10 @@ impl Default for RSSIConfig {
 }
 
 pub struct DIOMapping1 {
-    dio0: u8,
-    dio1: u8,
-    dio2: u8,
-    dio3: u8,
+    pub dio0: u8,
+    pub dio1: u8,
+    pub dio2: u8,
+    pub dio3: u8,
 }
 
 impl From<u8> for DIOMapping1 {
@@ -833,9 +833,9 @@ pub enum ClockoutFrequency {
 }
 
 pub struct DIOMapping2 {
-    dio4: u8,
-    dio5: u8,
-    clkout: ClockoutFrequency,
+    pub dio4: u8,
+    pub dio5: u8,
+    pub clkout: ClockoutFrequency,
 }
 
 impl From<u8> for DIOMapping2 {
@@ -854,7 +854,115 @@ impl Into<u8> for DIOMapping2 {
     }
 }
 
+impl Default for DIOMapping2 {
+    fn default() -> Self {
+        DIOMapping2 {
+            dio4: 0,
+            dio5: 0,
+            clkout: ClockoutFrequency::OFF,
+        }
+    }
+}
 
+pub struct IRQFlags1 {
+    pub mode_ready: bool,
+    pub rx_ready: bool,
+    pub tx_ready: bool,
+    pub pll_lock: bool,
+    pub rssi: bool,
+    pub timeout: bool,
+    pub auto_mode: bool,
+    pub sync_address_match: bool,
+}
+
+impl From<u8> for IRQFlags1 {
+    fn from(raw: u8) -> Self {
+        IRQFlags1 {
+            mode_ready: (raw >> 7) & 0b1 == 1,
+            rx_ready: (raw >> 6) & 0b1 == 1,
+            tx_ready: (raw >> 5) & 0b1 == 1,
+            pll_lock: (raw >> 4) & 0b1 == 1,
+            rssi: (raw >> 3) & 0b1 == 1,
+            timeout: (raw >> 2) & 0b1 == 1,
+            auto_mode: (raw >> 1) & 0b1 == 1,
+            sync_address_match: raw & 0b1 == 1,
+        }
+    }
+}
+
+impl Into<u8> for IRQFlags1 {
+    fn into(self) -> u8 {
+        ((self.mode_ready as u8) << 7) | ((self.rx_ready as u8) << 6) |
+            ((self.tx_ready as u8) << 5) | ((self.pll_lock as u8) << 4) |
+            ((self.rssi as u8) << 3) | ((self.timeout as u8) << 2) |
+            ((self.auto_mode as u8) << 1) | (self.sync_address_match as u8)
+    }
+}
+
+impl Default for IRQFlags1 {
+    fn default() -> Self {
+        IRQFlags1 {
+            mode_ready: true,
+            rx_ready: false,
+            tx_ready: false,
+            pll_lock: false,
+            rssi: false,
+            timeout: false,
+            auto_mode: false,
+            sync_address_match: false,
+        }
+    }
+}
+
+pub struct IRQFlags2 {
+    pub fifo_full: bool,
+    pub fifo_not_empty: bool,
+    pub fifo_level: bool,
+    pub fifo_overrun: bool,
+    pub packet_sent: bool,
+    pub payload_ready: bool,
+    pub crc_ok: bool,
+    pub low_bat: bool,
+}
+
+impl From<u8> for IRQFlags2 {
+    fn from(raw: u8) -> Self {
+        IRQFlags2 {
+            fifo_full: (raw >> 7) & 0b1 == 1,
+            fifo_not_empty: (raw >> 6) & 0b1 == 1,
+            fifo_level: (raw >> 5) & 0b1 == 1,
+            fifo_overrun: (raw >> 4) & 0b1 == 1,
+            packet_sent: (raw >> 3) & 0b1 == 1,
+            payload_ready: (raw >> 2) & 0b1 == 1,
+            crc_ok: (raw >> 1) & 0b1 == 1,
+            low_bat: raw & 0b1 == 1,
+        }
+    }
+}
+
+impl Into<u8> for IRQFlags2 {
+    fn into(self) -> u8 {
+        ((self.fifo_full as u8) << 7) | ((self.fifo_not_empty as u8) << 6) |
+            ((self.fifo_level as u8) << 5) | ((self.fifo_overrun as u8) << 4) |
+            ((self.packet_sent as u8) << 3) | ((self.payload_ready as u8) << 2) |
+            ((self.crc_ok as u8) << 1) | (self.low_bat as u8)
+    }
+}
+
+impl Default for IRQFlags2 {
+    fn default() -> Self {
+        IRQFlags2 {
+            fifo_full: false,
+            fifo_not_empty: false,
+            fifo_level: false,
+            fifo_overrun: false,
+            packet_sent: false,
+            payload_ready: false,
+            crc_ok: false,
+            low_bat: false,
+        }
+    }
+}
 
 // SPI Register access: Pg 31
 
