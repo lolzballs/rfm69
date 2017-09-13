@@ -829,7 +829,7 @@ pub enum ClockoutFrequency {
     XOSC16 = 0b100,
     XOSC32 = 0b101,
     RC = 0b110,
-    OFF = 0b111,
+    Off = 0b111,
 }
 
 pub struct DIOMapping2 {
@@ -859,7 +859,7 @@ impl Default for DIOMapping2 {
         DIOMapping2 {
             dio4: 0,
             dio5: 0,
-            clkout: ClockoutFrequency::OFF,
+            clkout: ClockoutFrequency::Off,
         }
     }
 }
@@ -1022,11 +1022,11 @@ pub enum PacketFiltering {
 }
 
 pub struct PacketConfig1 {
-    packet_length_variable: bool,
-    dc_free: PacketEncoding,
-    crc: bool,
-    crc_auto_clear_off: bool,
-    address_filtering: PacketFiltering,
+    pub packet_length_variable: bool,
+    pub dc_free: PacketEncoding,
+    pub crc: bool,
+    pub crc_auto_clear_off: bool,
+    pub address_filtering: PacketFiltering,
 }
 
 impl From<u8> for PacketConfig1 {
@@ -1221,6 +1221,31 @@ impl Default for Temp1 {
     }
 }
 
+#[repr(u8)]
+pub enum TestDAGC {
+    Normal = 0x00,
+    ImprovedLowBetaOn = 0x20,
+    ImprovedLowBetaOff = 0x30,
+}
+
+impl From<u8> for TestDAGC {
+    fn from(raw: u8) -> Self {
+        unsafe { mem::transmute(raw) }
+    }
+}
+
+impl Into<u8> for TestDAGC {
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
+
+impl Default for TestDAGC {
+    fn default() -> Self {
+        TestDAGC::ImprovedLowBetaOff
+    }
+}
+
 // SPI Register access: Pg 46
 
 pub struct RFM69 {
@@ -1229,7 +1254,104 @@ pub struct RFM69 {
 
 impl RFM69 {
     pub fn new(dev: Spidev) -> Result<Self> {
+
         Ok(RFM69 { dev })
+    }
+
+    pub fn set_network_id(&mut self, id: u8) -> Result<()> {
+        self.write_reg(REG_SYNCVALUE1, id)
+    }
+
+    pub fn default_config(&mut self) -> Result<()> {
+        self.write_reg(
+            REG_OPMODE,
+            OpModeConfig {
+                sequencer: true,
+                listen: false,
+                listen_abort: false,
+                mode: OperatingMode::Standby,
+            }.into(),
+        )?;
+        self.write_reg(
+            REG_DATAMODUL,
+            DataModulationConfig::default().into(),
+        )?;
+
+        self.write_reg_multiple(REG_BITRATE_MSB, &[0x02, 0x40])?;
+        self.write_reg_multiple(REG_FDEV_MSB, &[0x03, 0x33])?;
+        self.write_reg_multiple(REG_FRF_MSB, &[0xE4, 0xC0, 0x00])?;
+        self.write_reg(
+            REG_RXBW,
+            ReceiveBandwidth {
+                dcc_freq: 0b010,
+                bw_mant: ReceiveBandwidthMantissa::Mantissa16,
+                bw_exp: 0b010,
+            }.into(),
+        )?;
+        self.write_reg(
+            REG_DIOMAPPING1,
+            DIOMapping1 {
+                dio0: 0b01,
+                ..Default::default()
+            }.into(),
+        )?;
+        self.write_reg(
+            REG_DIOMAPPING2,
+            DIOMapping2 {
+                clkout: ClockoutFrequency::Off,
+                ..Default::default()
+            }.into(),
+        )?;
+        self.write_reg(
+            REG_IRQFLAGS2,
+            IRQFlags2 {
+                fifo_overrun: true,
+                ..Default::default()
+            }.into(),
+        )?;
+        self.write_reg(REG_RSSITHRESH, 220)?;
+        self.write_reg(
+            REG_SYNCCONFIG,
+            SyncConfig {
+                on: true,
+                fifo_fill_condition: FIFOFillCondition::Interrupt,
+                size: 1,
+                tolerance: 0,
+            }.into(),
+        )?;
+        self.write_reg(
+            REG_PACKETCONFIG1,
+            PacketConfig1 {
+                packet_length_variable: true,
+                dc_free: PacketEncoding::None,
+                crc: true,
+                crc_auto_clear_off: true,
+                address_filtering: PacketFiltering::None,
+            }.into(),
+        )?;
+        self.write_reg(REG_PAYLOADLENGTH, 255)?;
+        self.write_reg(
+            REG_FIFOTHRESH,
+            FifoThreshold {
+                when_not_empty: true,
+                threshold: 0x0F,
+            }.into(),
+        )?;
+        self.write_reg(
+            REG_PACKETCONFIG2,
+            PacketConfig2 {
+                inter_packet_rx_delay: 0x10,
+                restart_rx: false,
+                auto_rx_restart: true,
+                aes: false,
+            }.into(),
+        )?;
+        self.write_reg(
+            REG_TESTDAGC,
+            TestDAGC::ImprovedLowBetaOff.into(),
+        )?;
+
+        Ok(())
     }
 
     fn read_reg(&mut self, reg: u8) -> Result<u8> {
@@ -1261,7 +1383,7 @@ impl RFM69 {
     fn write_reg_multiple(&mut self, reg: u8, write: &[u8]) -> Result<()> {
         self.dev.transfer_multiple(
             &mut [
-                SpidevTransfer::write(&[reg & SPI_READ]),
+                SpidevTransfer::write(&[reg | SPI_WRITE]),
                 SpidevTransfer::write(write),
             ],
         )
