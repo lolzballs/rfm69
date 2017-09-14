@@ -87,6 +87,8 @@ pub const REG_TEMP1: u8 = 0x4E;
 pub const REG_TEMP2: u8 = 0x4F;
 pub const REG_TESTLNA: u8 = 0x58;
 pub const REG_TESTTCXO: u8 = 0x59;
+pub const REG_TESTPA1: u8 = 0x5A;
+pub const REG_TESTPA2: u8 = 0x5C;
 pub const REG_TESTLLBW: u8 = 0x5F;
 pub const REG_TESTDAGC: u8 = 0x6F;
 pub const REG_TESTAFC: u8 = 0x71;
@@ -1250,11 +1252,15 @@ impl Default for TestDAGC {
 
 pub struct RFM69 {
     dev: Spidev,
+    mode: OperatingMode,
 }
 
 impl RFM69 {
     pub fn new(dev: Spidev) -> Result<Self> {
-        let mut rfm = RFM69 { dev };
+        let mut rfm = RFM69 {
+            dev,
+            mode: OperatingMode::Standby,
+        };
 
         while rfm.read_reg(REG_SYNCVALUE1)? != 0xAA {
             rfm.write_reg(REG_SYNCVALUE1, 0xAA)?;
@@ -1266,8 +1272,44 @@ impl RFM69 {
         rfm.default_config()?;
         rfm.set_network_id(0xFA)?;
         rfm.encrypt(None)?;
+        rfm.set_power_amplifier(true)?;
+
+        while IRQFlags1::from(rfm.read_reg(REG_IRQFLAGS1)?).mode_ready {}
 
         Ok(rfm)
+    }
+
+    pub fn set_power_level(&mut self, power_level: u8) -> Result<()> {
+        let power_level = if power_level > 31 { 31 } else { power_level };
+        let mut level: PowerAmplifierLevel = self.read_reg(REG_PALEVEL)?.into();
+        level.output_power = power_level;
+        self.write_reg(REG_PALEVEL, level.into())
+    }
+
+    pub fn set_power_amplifier(&mut self, on: bool) -> Result<()> {
+        let mut ocp: OverloadCurrentProtection = self.read_reg(REG_OCP)?.into();
+        ocp.on = on;
+        self.write_reg(REG_OCP, ocp.into())?;
+
+        let mut level: PowerAmplifierLevel = self.read_reg(REG_PALEVEL)?.into();
+        if on {
+            level.pa0 = false;
+            level.pa1 = true;
+            level.pa2 = true;
+            self.write_reg(REG_PALEVEL, level.into())?;
+        } else {
+            level.pa0 = true;
+            level.pa1 = false;
+            level.pa2 = false;
+            self.write_reg(REG_PALEVEL, level.into())?;
+        }
+        Ok(())
+    }
+
+    fn set_power_amplifier_regs(&mut self, on: bool) -> Result<()> {
+        self.write_reg(REG_TESTPA1, if on { 0x5D } else { 0x55 })?;
+        self.write_reg(REG_TESTPA2, if on { 0x7C } else { 0x70 })?;
+        Ok(())
     }
 
     pub fn encrypt(&mut self, encrypt: Option<[u8; 16]>) -> Result<()> {
