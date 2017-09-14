@@ -1254,8 +1254,34 @@ pub struct RFM69 {
 
 impl RFM69 {
     pub fn new(dev: Spidev) -> Result<Self> {
+        let mut rfm = RFM69 { dev };
 
-        Ok(RFM69 { dev })
+        while rfm.read_reg(REG_SYNCVALUE1)? != 0xAA {
+            rfm.write_reg(REG_SYNCVALUE1, 0xAA)?;
+        }
+        while rfm.read_reg(REG_SYNCVALUE1)? != 0x55 {
+            rfm.write_reg(REG_SYNCVALUE1, 0x55)?;
+        }
+
+        rfm.default_config()?;
+        rfm.set_network_id(0xFA)?;
+        rfm.encrypt(None)?;
+
+        Ok(rfm)
+    }
+
+    pub fn encrypt(&mut self, encrypt: Option<[u8; 16]>) -> Result<()> {
+        let mut read: PacketConfig2 = self.read_reg(REG_PACKETCONFIG2)?.into();
+        match encrypt {
+            Some(key) => {
+                self.write_reg_multiple(REG_AESKEY1, &key)?;
+                read.aes = true;
+            }
+            None => {
+                read.aes = false;
+            }
+        }
+        self.write_reg(REG_PACKETCONFIG2, read.into())
     }
 
     pub fn set_network_id(&mut self, id: u8) -> Result<()> {
