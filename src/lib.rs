@@ -1,5 +1,4 @@
 extern crate byteorder;
-extern crate rppal;
 extern crate spidev;
 
 use std::cmp;
@@ -1054,9 +1053,9 @@ impl From<u8> for PacketConfig1 {
 
 impl Into<u8> for PacketConfig1 {
     fn into(self) -> u8 {
-        ((self.packet_length_variable as u8) >> 7) | ((self.dc_free as u8) >> 5) |
-            ((self.crc as u8) >> 4) | ((self.crc_auto_clear_off as u8) >> 3) |
-            ((self.address_filtering as u8) >> 1)
+        ((self.packet_length_variable as u8) << 7) | ((self.dc_free as u8) << 5) |
+            ((self.crc as u8) << 4) | ((self.crc_auto_clear_off as u8) << 3) |
+            ((self.address_filtering as u8) << 1)
     }
 }
 
@@ -1469,9 +1468,7 @@ impl RFM69 {
         let rssi = self.read_reg(REG_RSSIVALUE)?;
         let len = self.read_reg(REG_FIFO)? as usize;
         self.read_reg_multiple(REG_FIFO, &mut payload[..len])?;
-        let irqflags: IRQFlags2 = self.read_reg(REG_IRQFLAGS2)?.into();
-        println!("{:?}", irqflags);
-        self.set_mode_idle()?; // Clear FIFO
+        self.set_mode_idle()?;
 
         Ok(Some(Packet {
             payload,
