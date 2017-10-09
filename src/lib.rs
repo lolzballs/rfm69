@@ -1,12 +1,18 @@
 extern crate byteorder;
+extern crate rppal;
 extern crate spidev;
 
-use std::io::Result;
+use std::cmp;
+use std::io::{self, Result};
 use std::mem;
 
 use spidev::{Spidev, SpidevTransfer};
 
-pub const SPI_READ: u8 = 0x7f;
+pub const RFM69_MAX_PACKET: usize = 255;
+pub const RFM69_FXOSC: f32 = 32000000.0;
+pub const RFM69_FSTEP: f32 = RFM69_FXOSC / 524288.0;
+
+pub const SPI_READ: u8 = 0x7F;
 pub const SPI_WRITE: u8 = 0x80;
 
 pub const REG_FIFO: u8 = 0x00;
@@ -93,6 +99,7 @@ pub const REG_TESTLLBW: u8 = 0x5F;
 pub const REG_TESTDAGC: u8 = 0x6F;
 pub const REG_TESTAFC: u8 = 0x71;
 
+#[derive(Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum OperatingMode {
     Sleep = 0,
@@ -541,7 +548,7 @@ impl Default for LowNoiseAmplifier {
 }
 
 #[repr(u8)]
-pub enum ReceiveBandwidthMantissa {
+pub enum BandwidthMantissa {
     Mantissa16 = 0b00,
     Mantissa20 = 0b01,
     Mantissa24 = 0b10,
@@ -551,7 +558,7 @@ pub struct ReceiveBandwidth {
     /// Cut-off frequency of the DC offset canceller (DCC):
     /// f_c = \frac{4 \cross RxBw}{2\pi \cross 2^{DccFreq + 2}}
     pub dcc_freq: u8,
-    pub bw_mant: ReceiveBandwidthMantissa,
+    pub bw_mant: BandwidthMantissa,
     /// FSK: RxBw = \frac{FXOSC}{bw_mant \cross 2^{bw_exp + 2}}
     /// OOK: RxBw = \frac{FXOSC}{bw_mant \cross 2^{bw_exp + 3}}
     pub bw_exp: u8,
@@ -577,7 +584,7 @@ impl Default for ReceiveBandwidth {
     fn default() -> Self {
         ReceiveBandwidth {
             dcc_freq: 0b010,
-            bw_mant: ReceiveBandwidthMantissa::Mantissa24,
+            bw_mant: BandwidthMantissa::Mantissa24,
             bw_exp: 0b101,
         }
     }
@@ -585,23 +592,23 @@ impl Default for ReceiveBandwidth {
 
 pub struct AFCBandwidth {
     pub dcc_freq: u8,
-    pub rx_bw_mant: u8,
-    pub rx_bw_exp: u8,
+    pub bw_mant: BandwidthMantissa,
+    pub bw_exp: u8,
 }
 
 impl From<u8> for AFCBandwidth {
     fn from(raw: u8) -> Self {
         AFCBandwidth {
             dcc_freq: (raw >> 5) & 0b111,
-            rx_bw_mant: (raw >> 3) & 0b11,
-            rx_bw_exp: raw & 0b111,
+            bw_mant: unsafe { mem::transmute((raw >> 3) & 0b11) },
+            bw_exp: raw & 0b111,
         }
     }
 }
 
 impl Into<u8> for AFCBandwidth {
     fn into(self) -> u8 {
-        ((self.dcc_freq & 0b111) << 5) | ((self.rx_bw_mant & 0b11) << 3) | (self.rx_bw_exp & 0b111)
+        ((self.dcc_freq & 0b111) << 5) | ((self.bw_mant as u8) << 3) | (self.bw_exp & 0b111)
     }
 }
 
@@ -609,8 +616,8 @@ impl Default for AFCBandwidth {
     fn default() -> Self {
         AFCBandwidth {
             dcc_freq: 0b100,
-            rx_bw_mant: 0b01,
-            rx_bw_exp: 0b011,
+            bw_mant: BandwidthMantissa::Mantissa20,
+            bw_exp: 0b011,
         }
     }
 }
@@ -866,6 +873,7 @@ impl Default for DIOMapping2 {
     }
 }
 
+#[derive(Debug)]
 pub struct IRQFlags1 {
     pub mode_ready: bool,
     pub rx_ready: bool,
@@ -916,6 +924,7 @@ impl Default for IRQFlags1 {
     }
 }
 
+#[derive(Debug)]
 pub struct IRQFlags2 {
     pub fifo_full: bool,
     pub fifo_not_empty: bool,
@@ -1248,11 +1257,27 @@ impl Default for TestDAGC {
     }
 }
 
+pub struct ModemConfig {
+    pub modulation: DataModulationConfig,
+    pub bitrate: f32,
+    pub frequency_deviation: f32,
+    pub rxbw: ReceiveBandwidth,
+    pub afcbw: AFCBandwidth,
+    pub packet_config: PacketConfig1,
+}
+
+pub struct Packet {
+    pub payload: [u8; RFM69_MAX_PACKET],
+    pub len: usize,
+    pub rssi: i8,
+}
+
 // SPI Register access: Pg 46
 
 pub struct RFM69 {
     dev: Spidev,
     mode: OperatingMode,
+    power: i8,
 }
 
 impl RFM69 {
@@ -1260,23 +1285,220 @@ impl RFM69 {
         let mut rfm = RFM69 {
             dev,
             mode: OperatingMode::Standby,
+            power: 0,
         };
 
-        while rfm.read_reg(REG_SYNCVALUE1)? != 0xAA {
-            rfm.write_reg(REG_SYNCVALUE1, 0xAA)?;
-        }
-        while rfm.read_reg(REG_SYNCVALUE1)? != 0x55 {
-            rfm.write_reg(REG_SYNCVALUE1, 0x55)?;
-        }
-
-        rfm.default_config()?;
-        rfm.set_network_id(0xFA)?;
-        rfm.encrypt(None)?;
-        rfm.set_power_amplifier(true)?;
-
-        while IRQFlags1::from(rfm.read_reg(REG_IRQFLAGS1)?).mode_ready {}
+        rfm.set_mode_idle()?;
+        rfm.write_reg(
+            REG_FIFOTHRESH,
+            FifoThreshold {
+                when_not_empty: true,
+                threshold: 0x0F,
+            }.into(),
+        )?;
+        rfm.write_reg(
+            REG_TESTDAGC,
+            TestDAGC::ImprovedLowBetaOff.into(),
+        )?;
+        rfm.set_preamble_length(4)?;
+        rfm.set_power_amplifier_regs(false)?;
+        rfm.set_frequency(915.0)?;
+        rfm.set_tx_power(13)?;
 
         Ok(rfm)
+    }
+
+    pub fn set_sync_words(&mut self, sync: Option<&[u8]>) -> Result<()> {
+        let mut config: SyncConfig = self.read_reg(REG_SYNCCONFIG)?.into();
+        match sync {
+            Some(sync) => {
+                if sync.len() > 8 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "sync word size too big",
+                    ));
+                }
+
+                config.on = true;
+                config.size = (sync.len() - 1) as u8;
+                self.write_reg_multiple(REG_SYNCVALUE1, sync)?;
+            }
+            None => config.on = false,
+        }
+        self.write_reg(REG_SYNCCONFIG, config.into())?;
+        Ok(())
+    }
+
+    pub fn set_preamble_length(&mut self, length: u16) -> Result<()> {
+        self.write_reg(REG_PREAMBLE_MSB, (length >> 8) as u8)?;
+        self.write_reg(REG_PREAMBLE_LSB, (length & 0xFF) as u8)?;
+        Ok(())
+    }
+
+    pub fn set_operating_mode(&mut self, mode: OperatingMode) -> Result<()> {
+        if self.mode != mode {
+            self.mode = mode;
+
+            let mut config: OpModeConfig = self.read_reg(REG_OPMODE)?.into();
+            config.mode = mode;
+            self.write_reg(REG_OPMODE, config.into())?;
+
+            while !IRQFlags1::from(self.read_reg(REG_IRQFLAGS1)?).mode_ready {}
+        }
+        Ok(())
+    }
+
+    pub fn set_mode_idle(&mut self) -> Result<()> {
+        if self.mode != OperatingMode::Standby {
+            if self.power >= 18 {
+                self.set_power_amplifier_regs(false)?;
+            }
+            self.set_operating_mode(OperatingMode::Standby)?;
+        }
+        Ok(())
+    }
+
+    pub fn set_mode_rx(&mut self) -> Result<()> {
+        if self.mode != OperatingMode::Receiver {
+            if self.power >= 18 {
+                self.set_power_amplifier_regs(false)?;
+            }
+            self.set_operating_mode(OperatingMode::Receiver)?;
+        }
+        Ok(())
+    }
+
+    pub fn set_mode_tx(&mut self) -> Result<()> {
+        if self.mode != OperatingMode::Transmitter {
+            if self.power >= 18 {
+                self.set_power_amplifier_regs(true)?;
+            }
+            self.set_operating_mode(OperatingMode::Transmitter)?;
+        }
+        Ok(())
+    }
+
+    pub fn set_tx_power(&mut self, power: i8) -> Result<()> {
+        // TODO: Make sure it's a high-power module
+        let power = cmp::min(cmp::max(power, -2), 20);
+        let mut pa: PowerAmplifierLevel = self.read_reg(REG_PALEVEL)?.into();
+        match power {
+            -2...13 => {
+                // PA1, power = -18 + output_power
+                pa.pa0 = false;
+                pa.pa1 = true;
+                pa.pa2 = false;
+                pa.output_power = (power + 18) as u8;
+            }
+            14...17 => {
+                // PA1 and PA2, power = -11 + output_power
+                pa.pa0 = false;
+                pa.pa1 = true;
+                pa.pa2 = true;
+                pa.output_power = (power + 11) as u8;
+            }
+            18...20 => {
+                // PA1 and PA2, power = -14 + output_power
+                pa.pa0 = false;
+                pa.pa1 = true;
+                pa.pa2 = true;
+                pa.output_power = (power + 14) as u8;
+            }
+            _ => panic!("unsupported error level"),
+        }
+        self.write_reg(REG_PALEVEL, pa.into())?;
+        self.power = power;
+        Ok(())
+    }
+
+    pub fn set_frequency(&mut self, freq: f32) -> Result<()> {
+        let frf = ((freq * 1000000.0) / RFM69_FSTEP) as u32;
+        self.write_reg(REG_FRF_MSB, ((frf >> 16) & 0xFF) as u8)?;
+        self.write_reg(REG_FRF_MID, ((frf >> 8) & 0xFF) as u8)?;
+        self.write_reg(REG_FRF_LSB, (frf & 0xFF) as u8)?;
+        Ok(())
+    }
+
+    pub fn set_modem_config(&mut self, config: ModemConfig) -> Result<()> {
+        let bitrate = (RFM69_FXOSC / config.bitrate) as u16;
+        let fdev = (config.frequency_deviation / RFM69_FSTEP) as u16;
+        self.write_reg_multiple(
+            REG_DATAMODUL,
+            &[
+                config.modulation.into(),
+                (bitrate >> 8) as u8,
+                (bitrate & 0xFF) as u8,
+                (fdev >> 8) as u8,
+                (fdev & 0xFF) as u8,
+            ],
+        )?;
+        self.write_reg_multiple(
+            REG_RXBW,
+            &[config.rxbw.into(), config.afcbw.into()],
+        )?;
+        self.write_reg(
+            REG_PACKETCONFIG1,
+            config.packet_config.into(),
+        )?;
+        Ok(())
+    }
+
+    // TODO: Use interrupts if available
+    pub fn available(&mut self) -> Result<bool> {
+        match self.mode {
+            OperatingMode::Receiver => {
+                let irqflags: IRQFlags2 = self.read_reg(REG_IRQFLAGS2)?.into();
+                Ok(irqflags.payload_ready)
+            }
+            OperatingMode::Transmitter => Ok(false),
+            _ => {
+                self.set_mode_rx()?;
+
+                let irqflags: IRQFlags2 = self.read_reg(REG_IRQFLAGS2)?.into();
+                Ok(irqflags.payload_ready)
+            }
+        }
+    }
+
+    pub fn recv(&mut self) -> Result<Option<Packet>> {
+        if !self.available()? {
+            return Ok(None);
+        }
+
+        let mut payload = [0u8; RFM69_MAX_PACKET];
+        let rssi = self.read_reg(REG_RSSIVALUE)?;
+        let len = self.read_reg(REG_FIFO)? as usize;
+        self.read_reg_multiple(REG_FIFO, &mut payload[..len])?;
+        let irqflags: IRQFlags2 = self.read_reg(REG_IRQFLAGS2)?.into();
+        println!("{:?}", irqflags);
+        self.set_mode_idle()?; // Clear FIFO
+
+        Ok(Some(Packet {
+            payload,
+            len,
+            rssi: -((rssi / 2) as i8),
+        }))
+    }
+
+    pub fn send(&mut self, packet: &[u8]) -> Result<()> {
+        if packet.len() > RFM69_MAX_PACKET {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Payload size too big",
+            ));
+        }
+
+        // Block until previous transmission is finished
+        while self.mode == OperatingMode::Transmitter {}
+        self.set_mode_idle()?; // Don't RX while filling FIFO
+
+        // TODO: check channel activity
+
+        self.write_reg(REG_FIFO, packet.len() as u8)?;
+        self.write_reg_multiple(REG_FIFO, &packet)?;
+        self.set_mode_tx()?;
+
+        Ok(())
     }
 
     pub fn set_power_level(&mut self, power_level: u8) -> Result<()> {
@@ -1312,7 +1534,7 @@ impl RFM69 {
         Ok(())
     }
 
-    pub fn encrypt(&mut self, encrypt: Option<[u8; 16]>) -> Result<()> {
+    pub fn set_encryption_key(&mut self, encrypt: Option<[u8; 16]>) -> Result<()> {
         let mut read: PacketConfig2 = self.read_reg(REG_PACKETCONFIG2)?.into();
         match encrypt {
             Some(key) => {
@@ -1324,10 +1546,6 @@ impl RFM69 {
             }
         }
         self.write_reg(REG_PACKETCONFIG2, read.into())
-    }
-
-    pub fn set_network_id(&mut self, id: u8) -> Result<()> {
-        self.write_reg(REG_SYNCVALUE1, id)
     }
 
     pub fn default_config(&mut self) -> Result<()> {
@@ -1352,7 +1570,7 @@ impl RFM69 {
             REG_RXBW,
             ReceiveBandwidth {
                 dcc_freq: 0b010,
-                bw_mant: ReceiveBandwidthMantissa::Mantissa16,
+                bw_mant: BandwidthMantissa::Mantissa16,
                 bw_exp: 0b010,
             }.into(),
         )?;
@@ -1423,20 +1641,21 @@ impl RFM69 {
     }
 
     fn read_reg(&mut self, reg: u8) -> Result<u8> {
-        let mut buf = [0u8; 1];
-        self.dev.transfer_multiple(
-            &mut [
-                SpidevTransfer::write(&[reg & SPI_READ]),
-                SpidevTransfer::read(&mut buf),
-            ],
+        let mut buf = [0u8; 2];
+        let send = [reg & SPI_READ, 0];
+        self.dev.transfer(
+            &mut SpidevTransfer::read_write(&send, &mut buf),
         )?;
-        Ok(buf[0])
+        Ok(buf[1])
     }
 
     fn write_reg(&mut self, reg: u8, v: u8) -> Result<()> {
-        self.dev.transfer(
-            &mut SpidevTransfer::write(&[reg | SPI_WRITE, v]),
-        )
+        let mut buf = [0u8; 2];
+        self.dev.transfer(&mut SpidevTransfer::read_write(
+            &[reg | SPI_WRITE, v],
+            &mut buf,
+        ))?;
+        Ok(())
     }
 
     fn read_reg_multiple(&mut self, reg: u8, read: &mut [u8]) -> Result<()> {
@@ -1445,7 +1664,8 @@ impl RFM69 {
                 SpidevTransfer::write(&[reg & SPI_READ]),
                 SpidevTransfer::read(read),
             ],
-        )
+        )?;
+        Ok(())
     }
 
     fn write_reg_multiple(&mut self, reg: u8, write: &[u8]) -> Result<()> {
