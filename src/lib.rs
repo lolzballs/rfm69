@@ -185,7 +185,7 @@ impl Into<u8> for DataModulationConfig {
     fn into(self) -> u8 {
         ((self.data_mode as u8) << 5) |
             match self.modulation_type {
-                DataModulation::FSK(shaping) => 0b01000 | (shaping as u8),
+                DataModulation::FSK(shaping) => 0b00000 | (shaping as u8),
                 DataModulation::OOK(shaping) => 0b01001 | (shaping as u8),
             }
     }
@@ -1305,6 +1305,17 @@ impl RFM69 {
         rfm.set_tx_power(13)?;
 
         Ok(rfm)
+    }
+
+    pub fn print_registers(&mut self) -> Result<()> {
+        for i in 0..0x50 {
+            let reg = self.read_reg(i)?;
+            println!("{:X} {:X}", i, reg);
+        }
+        println!("{:X} {:X}", REG_TESTLNA, self.read_reg(REG_TESTLNA)?);
+        println!("{:X} {:X}", REG_TESTDAGC, self.read_reg(REG_TESTDAGC)?);
+        println!("{:X} {:X}", REG_TESTAFC, self.read_reg(REG_TESTAFC)?);
+        Ok(())
     }
 
     pub fn set_sync_words(&mut self, sync: Option<&[u8]>) -> Result<()> {

@@ -24,12 +24,12 @@ fn main() {
         bitrate: 250000.0,
         frequency_deviation: 250000.0,
         rxbw: ReceiveBandwidth {
-            dcc_freq: 8,
+            dcc_freq: 7,
             bw_mant: BandwidthMantissa::Mantissa16,
             bw_exp: 0,
         },
         afcbw: AFCBandwidth {
-            dcc_freq: 8,
+            dcc_freq: 7,
             bw_mant: BandwidthMantissa::Mantissa16,
             bw_exp: 0,
         },
@@ -41,8 +41,11 @@ fn main() {
             address_filtering: PacketFiltering::None,
         },
     }).unwrap();
+
     rfm.set_encryption_key(None).unwrap();
     rfm.set_sync_words(Some(&[0x2d, 0xd4])).unwrap();
+    rfm.print_registers().unwrap();
+
     loop {
         if rfm.available().unwrap() {
             if let Some(packet) = rfm.recv().unwrap() {
