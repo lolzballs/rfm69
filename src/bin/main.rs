@@ -50,6 +50,37 @@ fn main() {
         if rfm.available().unwrap() {
             if let Some(packet) = rfm.recv().unwrap() {
                 println!("{:?} {}", &packet.payload[..packet.len], packet.rssi);
+                rfm.send(
+                    &[
+                        255,
+                        255,
+                        0,
+                        0,
+                        65,
+                        110,
+                        100,
+                        32,
+                        104,
+                        101,
+                        108,
+                        108,
+                        111,
+                        32,
+                        98,
+                        97,
+                        99,
+                        107,
+                        32,
+                        116,
+                        111,
+                        32,
+                        121,
+                        111,
+                        117,
+                    ],
+                ).unwrap();
+                rfm.wait_until_sent().unwrap();
+                println!("Sent");
             }
         }
     }

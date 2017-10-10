@@ -1488,6 +1488,20 @@ impl RFM69 {
         }))
     }
 
+    pub fn wait_until_sent(&mut self) -> Result<()> {
+        if self.mode != OperatingMode::Transmitter {
+            return Ok(());
+        }
+
+        println!("Hello");
+        while !IRQFlags2::from(self.read_reg(REG_IRQFLAGS2)?).packet_sent {
+            println!("{:?}", IRQFlags2::from(self.read_reg(REG_IRQFLAGS2)?));
+        }
+
+        self.set_mode_idle()?;
+        Ok(())
+    }
+
     pub fn send(&mut self, packet: &[u8]) -> Result<()> {
         if packet.len() > RFM69_MAX_PACKET {
             return Err(io::Error::new(
@@ -1497,7 +1511,7 @@ impl RFM69 {
         }
 
         // Block until previous transmission is finished
-        while self.mode == OperatingMode::Transmitter {}
+        self.wait_until_sent()?;
         self.set_mode_idle()?; // Don't RX while filling FIFO
 
         // TODO: check channel activity
