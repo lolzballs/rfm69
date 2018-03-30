@@ -1,8 +1,16 @@
 [package]
-name = "spi_rfm69"
+name = "rfm69"
 version = "0.1.0"
 authors = ["Benjamin Cheng <ben@bcheng.cf>"]
 
 [dependencies]
 byteorder = "1"
-spidev = "0.3"
+embedded-hal = "0.1"
+
+[dependencies.cast]
+version = "0.2"
+default-features = false
+
+[dev-dependencies]
+linux-embedded-hal = { git = "https://github.com/japaric/linux-embedded-hal" }
+rand = "0.3"
