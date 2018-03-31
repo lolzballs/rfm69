@@ -2,38 +2,45 @@
 #![feature(unsize)]
 extern crate embedded_hal as hal;
 
+mod time;
 mod registers;
 
 use core::any::{Any, TypeId};
 use core::mem;
 use core::marker::{PhantomData, Unsize};
+use core::time::Duration;
 
 use hal::blocking::spi;
 use hal::digital::OutputPin;
 
 use registers::Register;
+pub use time::Timer;
 
+const TIMEOUT_MODE_READY: Duration = Duration::from_millis(1000);
 const FXOSC: f32 = 32000000.0;
 const FSTEP: f32 = FXOSC / 524288.0;
 
 pub struct Regular;
 pub struct HighPower;
 
-pub struct RFM69<SPI, NCS, PA> {
+pub struct RFM69<SPI, NCS, T, PA> {
     spi: SPI,
     ncs: NCS,
+    timer: T,
     _pa: PhantomData<PA>,
 }
 
-fn new<SPI, NCS, PA, E>(spi: SPI, ncs: NCS) -> Result<RFM69<SPI, NCS, PA>, E>
+fn new<SPI, NCS, T, PA, E>(spi: SPI, ncs: NCS, timer: T) -> Result<RFM69<SPI, NCS, T, PA>, E>
 where
     SPI: spi::Write<u8, Error = E> + spi::Transfer<u8, Error = E>,
     NCS: OutputPin,
+    T: Timer,
     PA: Any,
 {
     let mut rfm = RFM69 {
         spi,
         ncs,
+        timer,
         _pa: PhantomData,
     };
 
@@ -54,10 +61,11 @@ where
     Ok(rfm)
 }
 
-impl<SPI, NCS, PA, E> RFM69<SPI, NCS, PA>
+impl<SPI, NCS, T, PA, E> RFM69<SPI, NCS, T, PA>
 where
     SPI: spi::Write<u8, Error = E> + spi::Transfer<u8, Error = E>,
     NCS: OutputPin,
+    T: Timer,
     PA: Any,
 {
     pub fn op_mode(&mut self, mode: OpMode) -> Result<(), E> {
@@ -174,6 +182,27 @@ where
         }
     }
 
+    /*
+    pub fn receive(&mut self, &mut [u8]) -> Result<usize, E> {
+
+    }
+
+    pub fn send(&mut self, &[u8]) -> Result<usize, E> {
+
+    }
+    */
+
+    fn wait_for_mode(&mut self) -> Result<(), E> {
+        let start = self.timer.now();
+        while self.read(Register::IRQFLAGS1)? & 0b10000000 != 0 {
+            if self.timer.since(&start) > TIMEOUT_MODE_READY {
+                panic!("Timeout");
+            }
+        }
+
+        Ok(())
+    }
+
     fn high_power_regs(&mut self, on: bool) -> Result<(), E> {
         if TypeId::of::<PA>() == TypeId::of::<HighPower>() {
             self.write(Register::TESTPA1, if on { 0x5D } else { 0x55 })?;
@@ -223,13 +252,14 @@ where
     }
 }
 
-impl<SPI, NCS, E> RFM69<SPI, NCS, HighPower>
+impl<SPI, NCS, T, E> RFM69<SPI, NCS, T, HighPower>
 where
     SPI: spi::Write<u8, Error = E> + spi::Transfer<u8, Error = E>,
+    T: Timer,
     NCS: OutputPin,
 {
-    pub fn new(spi: SPI, ncs: NCS) -> Result<Self, E> {
-        let mut rfm: Self = new(spi, ncs)?;
+    pub fn new(spi: SPI, ncs: NCS, timer: T) -> Result<Self, E> {
+        let mut rfm: Self = new(spi, ncs, timer)?;
         rfm.high_power()?;
         Ok(rfm)
     }
@@ -242,13 +272,14 @@ where
     }
 }
 
-impl<SPI, NCS, E> RFM69<SPI, NCS, Regular>
+impl<SPI, NCS, T, E> RFM69<SPI, NCS, T, Regular>
 where
     SPI: spi::Write<u8, Error = E> + spi::Transfer<u8, Error = E>,
+    T: Timer,
     NCS: OutputPin,
 {
-    pub fn new(spi: SPI, ncs: NCS) -> Result<Self, E> {
-        let mut rfm: Self = new(spi, ncs)?;
+    pub fn new(spi: SPI, ncs: NCS, timer: T) -> Result<Self, E> {
+        let mut rfm: Self = new(spi, ncs, timer)?;
         rfm.high_power()?;
         Ok(rfm)
     }
