@@ -7,7 +7,7 @@ use linux_hal::{Pin, Spidev};
 use linux_hal::spidev::{self, SpidevOptions};
 use linux_hal::sysfs_gpio::Direction;
 
-use rfm69::{HighPower, RFM69, Timer};
+use rfm69::{HighPower, PacketLength, RFM69, Timer};
 
 struct PiTimer;
 
@@ -38,4 +38,12 @@ fn main() {
     pin.set_value(1).unwrap();
 
     let mut rfm69 = RFM69::<_, _, _, HighPower>::new(spi, pin, PiTimer).unwrap();
+    rfm69.packet_length(PacketLength::Fixed(2)).unwrap();
+
+    loop {
+        println!("RSSI: {}", rfm69.rssi().unwrap());
+        let mut buf = [0u8; 2];
+        rfm69.receive(&mut buf).unwrap();
+        println!("{:?}", buf);
+    }
 }

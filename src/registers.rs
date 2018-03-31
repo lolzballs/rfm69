@@ -10,7 +10,7 @@ const W: u8 = 0x80;
 #[allow(dead_code)]
 #[allow(non_camel_case_types)]
 #[repr(u8)]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Register {
     FIFO = 0x00,
     OPMODE = 0x01,

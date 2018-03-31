@@ -6,7 +6,6 @@ mod time;
 mod registers;
 
 use core::any::{Any, TypeId};
-use core::mem;
 use core::marker::{PhantomData, Unsize};
 use core::time::Duration;
 
@@ -16,7 +15,8 @@ use hal::digital::OutputPin;
 use registers::Register;
 pub use time::Timer;
 
-const TIMEOUT_MODE_READY: Duration = Duration::from_millis(1000);
+const TIMEOUT_MODE_READY: Duration = Duration::from_millis(100);
+const TIMEOUT_TX: Duration = Duration::from_millis(100);
 const FXOSC: f32 = 32000000.0;
 const FSTEP: f32 = FXOSC / 524288.0;
 
@@ -51,7 +51,7 @@ where
     rfm.bitrate(10000.0)?; // 10 kbps
     rfm.fdev(20000.0)?; // 20 kHz
     rfm.freq(915000000.0)?; // 915 MHz
-    rfm.lna_zin(LNAZin::_0)?;
+    rfm.write(Register::LNA, 0x88)?;
     rfm.write(Register::RXBW, 0x4C)?; // 25 kHz
     rfm.preamble(3)?;
     rfm.sync(&[0x41, 0x48])?;
@@ -74,7 +74,7 @@ where
             OpMode::Reciever => self.high_power_regs(false)?,
             _ => (),
         }
-        self.modify(Register::OPMODE, |r| (r & !0b111) | (mode as u8))
+        self.modify(Register::OPMODE, |r| (r & !0b11100) | ((mode as u8) << 2))
     }
 
     pub fn data_mode(&mut self, mode: DataMode) -> Result<(), E> {
@@ -99,7 +99,7 @@ where
 
     pub fn fdev(&mut self, fdev: f32) -> Result<(), E> {
         self.op_mode(OpMode::Standby)?;
-        let r = (FSTEP * fdev) as u16;
+        let r = (fdev / FSTEP) as u16;
         self.write(Register::FDEV_MSB, (r >> 8) as u8)?;
         self.write(Register::FDEV_LSB, (r & 0xFF) as u8)?;
         Ok(())
@@ -107,15 +107,11 @@ where
 
     pub fn freq(&mut self, freq: f32) -> Result<(), E> {
         self.op_mode(OpMode::Standby)?;
-        let r = (FSTEP * freq) as u32;
+        let r = (freq / FSTEP) as u32;
         self.write(Register::FRF_MSB, ((r >> 16) & 0xFF) as u8)?;
         self.write(Register::FRF_MID, ((r >> 8) & 0xFF) as u8)?;
         self.write(Register::FRF_LSB, (r & 0xFF) as u8)?;
         Ok(())
-    }
-
-    pub fn lna_zin(&mut self, zin: LNAZin) -> Result<(), E> {
-        self.modify(Register::LNA, |r| (r & !0b10000000) | (zin as u8))
     }
 
     pub fn preamble(&mut self, len: u16) -> Result<(), E> {
@@ -128,7 +124,10 @@ where
         if sync.len() == 0 {
             self.write(Register::SYNCCONFIG, 0)?;
         } else {
-            self.write(Register::SYNCCONFIG, 0b10000000 | (sync.len() - 1) as u8)?;
+            self.write(
+                Register::SYNCCONFIG,
+                0b10000000 | ((sync.len() - 1) << 3) as u8,
+            )?;
 
             for (i, b) in sync.iter().enumerate() {
                 self.write(Register::SYNCVALUE1 + i as u8, *b)?;
@@ -181,22 +180,63 @@ where
             FifoMode::Threshold(thresh) => self.write(Register::FIFOTHRESH, thresh & 0b1111),
         }
     }
-
-    /*
-    pub fn receive(&mut self, &mut [u8]) -> Result<usize, E> {
-
+    pub fn rssi(&mut self) -> Result<f32, E> {
+        Ok(self.read(Register::RSSIVALUE)? as f32 / -2.0)
     }
 
-    pub fn send(&mut self, &[u8]) -> Result<usize, E> {
+    pub fn receive(&mut self, buf: &mut [u8]) -> Result<(), E> {
+        // TODO: Check buf length
+        self.op_mode(OpMode::Reciever)?;
+        self.wait_for_mode()?;
 
+        while !self.is_packet_ready()? {}
+
+        self.read_many(Register::FIFO, buf)?;
+
+        self.op_mode(OpMode::Reciever)?;
+        Ok(())
     }
-    */
+
+    pub fn send(&mut self, buf: &[u8]) -> Result<(), E> {
+        // TODO: Check buf length
+        self.op_mode(OpMode::Standby)?;
+        self.wait_for_mode()?;
+
+        self.clear_fifo()?;
+
+        self.write_many(Register::FIFO, buf)?;
+        self.op_mode(OpMode::Transmitter)?;
+
+        self.wait_for_packet_sent()?;
+        self.op_mode(OpMode::Standby)?;
+
+        Ok(())
+    }
+
+    fn clear_fifo(&mut self) -> Result<(), E> {
+        self.write(Register::IRQFLAGS2, 0x10)
+    }
+
+    fn is_packet_ready(&mut self) -> Result<bool, E> {
+        Ok(self.read(Register::IRQFLAGS2)? & 0b00000100 != 0)
+    }
 
     fn wait_for_mode(&mut self) -> Result<(), E> {
         let start = self.timer.now();
-        while self.read(Register::IRQFLAGS1)? & 0b10000000 != 0 {
+        while self.read(Register::IRQFLAGS1)? & 0b10000000 == 0 {
             if self.timer.since(&start) > TIMEOUT_MODE_READY {
-                panic!("Timeout");
+                panic!("Timeout"); // TODO: Turn this into an Error
+            }
+        }
+
+        Ok(())
+    }
+
+    fn wait_for_packet_sent(&mut self) -> Result<(), E> {
+        let start = self.timer.now();
+        while self.read(Register::IRQFLAGS2)? & 0b00001000 == 0 {
+            if self.timer.since(&start) > TIMEOUT_TX {
+                panic!("Timeout"); // TODO: Turn this into an Error
             }
         }
 
@@ -221,34 +261,29 @@ where
     }
 
     fn read(&mut self, reg: Register) -> Result<u8, E> {
-        let buf: [u8; 2] = self.read_many(reg)?;
-        Ok(buf[1])
+        let mut buf = [0u8; 1];
+        self.read_many(reg, &mut buf)?;
+        Ok(buf[0])
     }
 
-    fn read_many<B>(&mut self, reg: Register) -> Result<B, E>
-    where
-        B: Unsize<[u8]>,
-    {
-        let mut buffer: B = unsafe { mem::zeroed() };
-        {
-            let slice: &mut [u8] = &mut buffer;
-            slice[0] = reg.read_address();
-            self.ncs.set_low();
-            self.spi.transfer(slice)?;
-            self.ncs.set_high();
-        }
-        Ok(buffer)
-    }
-
-    fn write(&mut self, reg: Register, val: u8) -> Result<(), E> {
+    fn read_many(&mut self, reg: Register, data: &mut [u8]) -> Result<(), E> {
         self.ncs.set_low();
-        self.spi.write(&[reg.write_address(), val])?;
+        self.spi.transfer(&mut [reg.read_address()])?;
+        self.spi.transfer(data)?;
         self.ncs.set_high();
         Ok(())
     }
 
+    fn write(&mut self, reg: Register, val: u8) -> Result<(), E> {
+        self.write_many(reg, &[val])
+    }
+
     fn write_many(&mut self, reg: Register, buf: &[u8]) -> Result<(), E> {
-        unimplemented!();
+        self.ncs.set_low();
+        self.spi.write(&[reg.write_address()])?;
+        self.spi.write(buf)?;
+        self.ncs.set_high();
+        Ok(())
     }
 }
 
