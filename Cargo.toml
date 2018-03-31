@@ -2,9 +2,9 @@
 name = "rfm69"
 version = "0.1.0"
 authors = ["Benjamin Cheng <ben@bcheng.cf>"]
+license = "MIT/Apache-2.0"
 
 [dependencies]
-byteorder = "1"
 embedded-hal = "0.1"
 
 [dependencies.cast]
