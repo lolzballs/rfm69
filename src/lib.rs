@@ -1,6 +1,5 @@
 #![no_std]
 #![feature(unsize)]
-extern crate byteorder;
 extern crate embedded_hal as hal;
 
 mod registers;
