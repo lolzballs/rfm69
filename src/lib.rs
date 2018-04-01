@@ -1,3 +1,32 @@
+//! A platform agnostic Rust driver for the RFM69 wireless chips, which are based on the
+//! SX1231 chip. This crates uses the
+//! [`embedded_hal`](https://github.com/japaric/embedded_hal) traits.
+//!
+//! ## The Device
+//!
+//! There are multiple variants of the RFM69, which this crate aims to support.
+//! Products with an H are high power chips and should be use the `HighPower` PA mode.
+//! Products with a C have a different pinout arrangement but are otherwise the same as
+//! their non-C variant.
+//!
+//! ### RFM69W
+//! - [Product page](http://www.hoperf.com/rf_transceiver/modules/RFM69W.html)
+//! - [Datasheet](http://www.hoperf.com/upload/rf/RFM69W-V1.3.pdf)
+//!
+//! ### RFM69CW
+//! - [Product page](http://www.hoperf.com/rf_transceiver/modules/RFM69CW.html)
+//! - [Datasheet](http://www.hoperf.com/upload/rf/RFM69HCW-V1.1.pdf)
+//!
+//! ### RFM69HW
+//! - [Product page](http://www.hoperf.com/rf_transceiver/modules/RFM69HCW.html)
+//! - [Datasheet](http://www.hoperf.com/upload/rf/RFM69HW-V1.3.pdf)
+//!
+//! ### RFM69HCW
+//! - [Product page](http://www.hoperf.com/rf_transceiver/modules/RFM69HCW.html)
+//! - [Datasheet](http://www.hoperf.com/upload/rf/RFM69HCW-V1.1.pdf)
+//!
+//! See `examples/` for examples on usage.
+
 #![no_std]
 #![feature(unsize)]
 extern crate embedded_hal as hal;
@@ -27,6 +56,7 @@ pub struct RFM69<SPI, NCS, T, PA> {
     spi: SPI,
     ncs: NCS,
     timer: T,
+    rssi: f32,
     _pa: PhantomData<PA>,
 }
 
@@ -41,6 +71,7 @@ where
         spi,
         ncs,
         timer,
+        rssi: 0.0,
         _pa: PhantomData,
     };
 
@@ -56,6 +87,7 @@ where
     rfm.preamble(3)?;
     rfm.sync(&[0x41, 0x48])?;
     rfm.packet_length(PacketLength::Fixed(5))?;
+    rfm.modify(Register::PALEVEL, |r| (r & 0xE0) | 31)?;
     rfm.fifo_mode(FifoMode::NotEmpty)?;
 
     Ok(rfm)
@@ -69,12 +101,13 @@ where
     PA: Any,
 {
     pub fn op_mode(&mut self, mode: OpMode) -> Result<(), E> {
+        self.modify(Register::OPMODE, |r| (r & !0b11100) | ((mode as u8) << 2))?;
         match mode {
             OpMode::Transmitter => self.high_power_regs(true)?,
             OpMode::Reciever => self.high_power_regs(false)?,
             _ => (),
         }
-        self.modify(Register::OPMODE, |r| (r & !0b11100) | ((mode as u8) << 2))
+        Ok(())
     }
 
     pub fn data_mode(&mut self, mode: DataMode) -> Result<(), E> {
@@ -180,8 +213,9 @@ where
             FifoMode::Threshold(thresh) => self.write(Register::FIFOTHRESH, thresh & 0b1111),
         }
     }
-    pub fn rssi(&mut self) -> Result<f32, E> {
-        Ok(self.read(Register::RSSIVALUE)? as f32 / -2.0)
+
+    pub fn rssi(&mut self) -> f32 {
+        self.rssi
     }
 
     pub fn receive(&mut self, buf: &mut [u8]) -> Result<(), E> {
@@ -191,9 +225,10 @@ where
 
         while !self.is_packet_ready()? {}
 
-        self.read_many(Register::FIFO, buf)?;
+        self.op_mode(OpMode::Standby)?;
 
-        self.op_mode(OpMode::Reciever)?;
+        self.read_many(Register::FIFO, buf)?;
+        self.rssi = self.read(Register::RSSIVALUE)? as f32 / -2.0;
         Ok(())
     }
 
@@ -327,6 +362,7 @@ where
     }
 }
 
+#[derive(Copy, Clone)]
 pub enum OpMode {
     Sleep = 0b000,
     Standby = 0b001,
@@ -335,21 +371,36 @@ pub enum OpMode {
     Reciever = 0b100,
 }
 
+/// Data processing mode
 pub enum DataMode {
+    /// Packet mode
     Packet = 0b00,
+    /// Continuous mode with bit synchronizer
     ContinuousSync = 0b10,
+    /// Continuous mode without bit synchronizer
     Continuous = 0b11,
 }
 
+/// Modulation scheme
 pub enum ModulationType {
+    /// Frequency shift keying
     FSK = 0b00,
+    /// On-off keying
     OOK = 0b01,
 }
 
+/// Data shaping
 pub enum ModulationShaping {
+    /// No Shaping
     _00 = 0b00,
+    /// FSK: Gaussian filter: BT = 1.0
+    /// OOK: Filtering with cutoff frequency = BR
     _01 = 0b01,
+    /// FSK: Gaussian filter: BT = 0.5
+    /// OOK: Filtering with cutoff frequency = 2 * 2 * BR
     _10 = 0b10,
+    /// FSK: Gaussian filter: BT = 0.3
+    /// OOK: Reserved
     _11 = 0b11,
 }
 
@@ -374,8 +425,11 @@ pub enum DCEncoding {
 
 /// Address filtering mode
 pub enum AddressMode {
+    /// No filtering
     None = 0b00,
+    /// Only matches when NodeAdrs is equal
     Node = 0b01,
+    /// Only matches when NodeAdrs is equal or BroadcastAdrs is equal
     NodeBroadcast = 0b10,
 }
 

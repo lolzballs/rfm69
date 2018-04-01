@@ -41,9 +41,9 @@ fn main() {
     rfm69.packet_length(PacketLength::Fixed(2)).unwrap();
 
     loop {
-        println!("RSSI: {}", rfm69.rssi().unwrap());
         let mut buf = [0u8; 2];
         rfm69.receive(&mut buf).unwrap();
         println!("{:?}", buf);
+        println!("RSSI: {}", rfm69.rssi());
     }
 }
