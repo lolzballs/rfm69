@@ -76,9 +76,11 @@ where
     };
 
     rfm.op_mode(OpMode::Standby)?;
-    rfm.data_mode(DataMode::Packet)?;
-    rfm.mod_type(ModulationType::FSK)?;
-    rfm.mod_shaping(ModulationShaping::_00)?;
+    rfm.mod_settings(ModulationSettings {
+        mode: DataMode::Packet,
+        ty: ModulationType::FSK,
+        shaping: ModulationShaping::_00,
+    })?;
     rfm.bitrate(10000.0)?; // 10 kbps
     rfm.fdev(20000.0)?; // 20 kHz
     rfm.freq(915000000.0)?; // 915 MHz
@@ -110,16 +112,11 @@ where
         Ok(())
     }
 
-    pub fn data_mode(&mut self, mode: DataMode) -> Result<(), E> {
-        self.modify(Register::DATAMODUL, |r| (r & !0b1100000) | (mode as u8))
-    }
-
-    pub fn mod_type(&mut self, ty: ModulationType) -> Result<(), E> {
-        self.modify(Register::DATAMODUL, |r| (r & !0b11000) | (ty as u8))
-    }
-
-    pub fn mod_shaping(&mut self, ty: ModulationShaping) -> Result<(), E> {
-        self.modify(Register::DATAMODUL, |r| (r & !0b11) | (ty as u8))
+    pub fn mod_settings(&mut self, settings: ModulationSettings) -> Result<(), E> {
+        self.write(
+            Register::DATAMODUL,
+            (settings.mode as u8) << 5 | (settings.ty as u8) << 3 | (settings.shaping as u8),
+        )
     }
 
     pub fn bitrate(&mut self, rate: f32) -> Result<(), E> {
@@ -182,21 +179,12 @@ where
         Ok(())
     }
 
-    pub fn packet_encoding(&mut self, encoding: DCEncoding) -> Result<(), E> {
-        self.modify(Register::PACKETCONFIG1, |r| {
-            (r & !0b1100000) | (encoding as u8)
-        })?;
-        Ok(())
-    }
-
-    pub fn packet_crc(&mut self, on: bool) -> Result<(), E> {
-        self.modify(Register::PACKETCONFIG1, |r| (r & !0b10000) | (on as u8))?;
-        Ok(())
-    }
-
-    pub fn packet_address(&mut self, mode: AddressMode) -> Result<(), E> {
-        self.modify(Register::PACKETCONFIG1, |r| (r & !0b110) | (mode as u8))?;
-        Ok(())
+    pub fn packet_settings(&mut self, settings: PacketSettings) -> Result<(), E> {
+        self.write(
+            Register::PACKETCONFIG1,
+            (settings.encoding as u8) << 5 | (settings.crc as u8) << 4
+                | (settings.filtering as u8) << 1,
+        )
     }
 
     pub fn node_address(&mut self, a: u8) -> Result<(), E> {
@@ -371,6 +359,12 @@ pub enum OpMode {
     Reciever = 0b100,
 }
 
+pub struct ModulationSettings {
+    pub mode: DataMode,
+    pub ty: ModulationType,
+    pub shaping: ModulationShaping,
+}
+
 /// Data processing mode
 pub enum DataMode {
     /// Packet mode
@@ -410,6 +404,12 @@ pub enum LNAZin {
     _0 = 0b0,
     /// 200 Ohms
     _1 = 0b1,
+}
+
+pub struct PacketSettings {
+    pub crc: bool,
+    pub encoding: DCEncoding,
+    pub filtering: AddressMode,
 }
 
 pub enum PacketLength {
