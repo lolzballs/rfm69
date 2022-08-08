@@ -27,7 +27,7 @@ fn main() {
     let mut spi = Spidev::open("/dev/spidev0.0").expect("SPI open error");
     let options = SpidevOptions::new()
         .max_speed_hz(1_000_000)
-        .mode(spidev::SPI_MODE_0)
+        .mode(spidev::SpiModeFlags::SPI_MODE_0)
         .build();
     spi.configure(&options).unwrap();
 

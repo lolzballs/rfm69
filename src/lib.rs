@@ -35,11 +35,11 @@ mod time;
 mod registers;
 
 use core::any::{Any, TypeId};
-use core::marker::{PhantomData, Unsize};
+use core::marker::{PhantomData};
 use core::time::Duration;
 
 use hal::blocking::spi;
-use hal::digital::OutputPin;
+use hal::digital::v2::OutputPin;
 
 use registers::Register;
 pub use time::Timer;

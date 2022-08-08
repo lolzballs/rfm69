@@ -1,9 +1,6 @@
 use core::ops::Add;
 use core::mem;
 
-use hal::blocking::spi;
-use hal::digital::OutputPin;
-
 const R: u8 = 0x7F;
 const W: u8 = 0x80;
 

@@ -5,12 +5,12 @@ authors = ["Benjamin Cheng <ben@bcheng.cf>"]
 license = "MIT/Apache-2.0"
 
 [dependencies]
-embedded-hal = "0.1"
+embedded-hal = "0.2.7"
 
 [dependencies.cast]
-version = "0.2"
+version = "0.3.0"
 default-features = false
 
 [dev-dependencies]
-linux-embedded-hal = { git = "https://github.com/japaric/linux-embedded-hal" }
-rand = "0.3"
+linux-embedded-hal = { git = "https://github.com/japaric/linux-embedded-hal", tag = "v0.3.2" }
+rand = "0.8.5"
